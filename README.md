@@ -59,10 +59,20 @@ libstdc++ 15 `std` module):
 * **`basic_gemm.cu` (`cutlass.{cute,gemm}`):** caches parsed CUTLASS/CuTe/STL
   ASTs in per-arch `.pcm` BMIs while still instantiating custom template
   specializations and running `ptxas` SASS codegen in the consumer TU.
-* **`cached_gemm.cu` (`cutlass.sgemm_op`):** instantiates the concrete GEMM +
-  CuTe kernels once inside `cutlass.sgemm_op.cppm` (`libcutlass_sgemm_op_mod.a`),
-  so consumer TUs skip both textual header parsing and backend `ptxas` SASS
-  compilation (`cuobjdump` confirms `cached_gemm.cu.o` emits zero device code).
+* **`cached_gemm.cu` (`cutlass.sgemm_op`):** moves template instantiation +
+  NVPTX + `ptxas` SASS compilation into a **one-time module object build**
+  (`cutlass.sgemm_op.cppm -> cutlass.sgemm_op.o`: **2.13s** for `sm_80`,
+  **3.43s** for `sm_80 + sm_90`), archived into `libcutlass_sgemm_op_mod.a`.
+  The table above reports per-consumer `-c` compile time (excluding prebuilt
+  `.pcm` and `module.o` artifacts):
+  * For a **single cold consumer ($N = 1$)**, total compile time (`module.o` +
+    `cached_gemm.o`) is comparable to `basic_gemm.cu` because `ptxas` still runs
+    once inside `cutlass.sgemm_op.o`.
+  * Across **$N$ consumers** sharing the operator (e.g. $3.43\text{s} + 1.01N$
+    vs. $3.75N$ modular-AST or $12.71N$ textual on `sm_80 + sm_90`, breaking
+    even at $N \ge 2$) and during **incremental rebuilds** of consumer TUs,
+    each consumer TU skips `ptxas` completely (`cuobjdump` confirms
+    `cached_gemm.cu.o` emits zero device code).
 
 Reproduce locally with:
 

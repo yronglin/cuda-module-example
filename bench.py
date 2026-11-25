@@ -110,6 +110,9 @@ def main() -> None:
         for m in ["std", "cuda.runtime", "cutlass.cute", "cutlass.gemm", "cutlass.sgemm_op"]
     ]
 
+    op_cppm = os.path.join(src_dir, "cutlass.sgemm_op.cppm")
+    op_dep_flags = [f"-fmodule-file={m}={os.path.join(build_dir, m + '.pcm')}" for m in ["cutlass.cute", "cutlass.gemm"]]
+
     for title, nvcc_archs, clang_archs, tag in [
         ("Single-arch (sm_80, -O3 -c)", ["-arch=sm_80"], ["--cuda-gpu-arch=sm_80"], "80"),
         (
@@ -137,7 +140,12 @@ def main() -> None:
              "-o", os.path.join(build_dir, f"clang_mod_{tag}.o")],
         )
         timed(
-            "clang + import std + cuda.runtime + cutlass.sgemm_op (AST+SASS)",
+            "  [one-time] cutlass.sgemm_op.cppm -> module.o (SASS fatbin)",
+            [*common, "-x", "cuda-module", *clang_archs, *op_dep_flags, "-c", op_cppm,
+             "-o", os.path.join(build_dir, f"cutlass_sgemm_op_{tag}.o")],
+        )
+        timed(
+            "clang + import std + cuda.runtime + cutlass.sgemm_op (consumer)",
             [*common, "-x", "cuda", "--no-offload-wrapper-inc", *clang_archs, *cached_flags, "-c", cached_cu,
              "-o", os.path.join(build_dir, f"clang_cached_op_{tag}.o")],
         )
